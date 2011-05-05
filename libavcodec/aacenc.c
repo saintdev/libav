@@ -320,16 +320,6 @@ static void adjust_frame_information(AACEncContext *apc, ChannelElement *cpe, in
         maxsfb = 0;
         cpe->ch[ch].pulse.num_pulse = 0;
         for (w = 0; w < ics->num_windows*16; w += 16) {
-            for (g = 0; g < ics->num_swb; g++) {
-                //apply M/S
-                if (cpe->common_window && !ch && cpe->ms_mask[w + g]) {
-                    for (i = 0; i < ics->swb_sizes[g]; i++) {
-                        cpe->ch[0].coeffs[start+i] = (cpe->ch[0].coeffs[start+i] + cpe->ch[1].coeffs[start+i]) / 2.0;
-                        cpe->ch[1].coeffs[start+i] =  cpe->ch[0].coeffs[start+i] - cpe->ch[1].coeffs[start+i];
-                    }
-                }
-                start += ics->swb_sizes[g];
-            }
             for (cmaxsfb = ics->num_swb; cmaxsfb > 0 && cpe->ch[ch].zeroes[w+cmaxsfb-1]; cmaxsfb--)
                 ;
             maxsfb = FFMAX(maxsfb, cmaxsfb);
@@ -491,7 +481,7 @@ static int aac_encode_frame(AVCodecContext *avctx,
     AACEncContext *s = avctx->priv_data;
     int16_t *samples = s->samples, *samples2, *la;
     ChannelElement *cpe;
-    int i, ch, w, g, chans, tag, start_ch;
+    int i, j, ch, w, g, chans, tag, start_ch, start;
     int chan_el_counter[4];
     FFPsyWindowInfo windows[AAC_MAX_CHANNELS];
 
@@ -553,6 +543,25 @@ static int aac_encode_frame(AVCodecContext *avctx,
 
             apply_window_and_mdct(avctx, s, &cpe->ch[ch], samples2);
         }
+        if (tag == TYPE_CPE
+            && wi[0].window_type[0] == wi[1].window_type[0]
+            && wi[0].window_shape   == wi[1].window_shape) {
+            /* Go ahead and calculate mid/side coefficients now, we have to calculate them at least once anyway */
+            IndividualChannelStream *ics = &cpe->ch[0].ics;
+            start = 0;
+            for (w = 0; w < ics->num_windows*16; w += 16) {
+                for (g = 0; g < ics->num_swb; g++) {
+                    for (j = 0; j < ics->swb_sizes[g]; j++) {
+                        /* Channels 2 and 3 are the virtual mid and side channels. */
+                        memcpy(&cpe->ch[2], &cpe->ch[0], sizeof(cpe->ch[2]));
+                        memcpy(&cpe->ch[3], &cpe->ch[1], sizeof(cpe->ch[3]));
+                        cpe->ch[2].coeffs[start+j] = (cpe->ch[0].coeffs[start+i] + cpe->ch[1].coeffs[start+i]) / 2.0;
+                        cpe->ch[3].coeffs[start+i] =  cpe->ch[2].coeffs[start+i] - cpe->ch[1].coeffs[start+i];
+                    }
+                }
+                start += ics->swb_sizes[g];
+            }
+        }
         start_ch += chans;
     }
     do {
@@ -573,10 +582,6 @@ static int aac_encode_frame(AVCodecContext *avctx,
             for (ch = 0; ch < chans; ch++)
                 coeffs[ch] = cpe->ch[ch].coeffs;
             s->psy.model->analyze(&s->psy, start_ch, coeffs, wi);
-            for (ch = 0; ch < chans; ch++) {
-                s->cur_channel = start_ch * 2 + ch;
-                s->coder->search_for_quantizers(avctx, s, &cpe->ch[ch], s->lambda);
-            }
             cpe->common_window = 0;
             if (chans > 1
                 && wi[0].window_type[0] == wi[1].window_type[0]
@@ -600,6 +605,10 @@ static int aac_encode_frame(AVCodecContext *avctx,
                 } else if (s->coder->search_for_ms) {
                     s->coder->search_for_ms(s, cpe, s->lambda);
                 }
+            }
+            for (ch = 0; ch < chans; ch++) {
+                s->cur_channel += ch;
+                s->coder->search_for_quantizers(avctx, s, &cpe->ch[ch], s->lambda);
             }
             adjust_frame_information(s, cpe, chans);
             if (chans == 2) {

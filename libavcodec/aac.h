@@ -240,7 +240,7 @@ typedef struct {
     int     ms_mode;          ///< Signals mid/side stereo flags coding mode (used by encoder)
     uint8_t ms_mask[128];     ///< Set if mid/side stereo is used for each scalefactor window band
     // shared
-    SingleChannelElement ch[2];
+    SingleChannelElement ch[4]; /* The 2 extra channels are for Mid/Side in the encoder */
     // CCE specific
     ChannelCoupling coup;
     SpectralBandReplication sbr;
