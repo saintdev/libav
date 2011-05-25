@@ -1064,13 +1064,16 @@ static void search_for_ms(AACEncContext *s, ChannelElement *cpe,
         return;
     for (w = 0; w < ics->num_windows; w += ics->group_len[w]) {
         for (g = 0;  g < ics->num_swb; g++) {
-            for (w2 = 0; w2 < ics->group_len[w]; w2++) {
-                for (i = 0; i < ics->swb_sizes[g]; i++) {
-                    sceR->coeffs[start+w2*128+i] = sceM->coeffs[start+w2*128+i];
-                    sceL->coeffs[start+w2*128+i] = sceS->coeffs[start+w2*128+i];
+            if (cpe->ms_mask[w*16+g] = group->coupling[w*16+g]) {
+                for (w2 = 0; w2 < ics->group_len[w]; w2++) {
+                    for (i = 0; i < ics->swb_sizes[g]; i++) {
+                        sceR->coeffs[start+w2*128+i] = sceM->coeffs[start+w2*128+i];
+                        sceL->coeffs[start+w2*128+i] = sceS->coeffs[start+w2*128+i];
+                    }
                 }
             }
-            cpe->ms_mask[w*16+g] = group->coupling[w*16+g];
+            av_log(NULL, AV_LOG_INFO, "sfb = %d, m/s = %d, coupling = %d\n",
+                   g, cpe->ms_mask[w*16+g], group->coupling[w*16+g]);
             start += ics->swb_sizes[g];
         }
     }

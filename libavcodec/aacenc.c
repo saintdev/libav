@@ -420,6 +420,8 @@ static void encode_spectral_coeffs(AACEncContext *s, SingleChannelElement *sce)
     for (w = 0; w < sce->ics.num_windows; w += sce->ics.group_len[w]) {
         start = 0;
         for (i = 0; i < sce->ics.max_sfb; i++) {
+            av_log(NULL, AV_LOG_INFO, "sfb = %d, zeroes = %d, sf = %d, cb = %d\n",
+                i, sce->zeroes[w*16+i], sce->sf_idx[w*16+i], sce->band_type[w*16+i]);
             if (sce->zeroes[w*16 + i]) {
                 start += sce->ics.swb_sizes[i];
                 continue;
@@ -430,6 +432,7 @@ static void encode_spectral_coeffs(AACEncContext *s, SingleChannelElement *sce)
                                                    sce->sf_idx[w*16 + i],
                                                    sce->band_type[w*16 + i],
                                                    s->lambda);
+
             start += sce->ics.swb_sizes[i];
         }
     }
@@ -553,10 +556,10 @@ static int aac_encode_frame(AVCodecContext *avctx,
                 for (g = 0; g < ics->num_swb; g++) {
                     for (j = 0; j < ics->swb_sizes[g]; j++) {
                         /* Channels 2 and 3 are the virtual mid and side channels. */
-                        memcpy(&cpe->ch[2], &cpe->ch[0], sizeof(cpe->ch[2]));
-                        memcpy(&cpe->ch[3], &cpe->ch[1], sizeof(cpe->ch[3]));
-                        cpe->ch[2].coeffs[start+j] = (cpe->ch[0].coeffs[start+i] + cpe->ch[1].coeffs[start+i]) / 2.0;
-                        cpe->ch[3].coeffs[start+i] =  cpe->ch[2].coeffs[start+i] - cpe->ch[1].coeffs[start+i];
+                        float M = (cpe->ch[0].coeffs[start+i] + cpe->ch[1].coeffs[start+i]) / 2.0f;
+                        float S = (cpe->ch[0].coeffs[start+i] - cpe->ch[1].coeffs[start+i]) / 2.0f;
+                        cpe->ch[2].coeffs[start+j] = M;
+                        cpe->ch[3].coeffs[start+i] = S;
                     }
                 }
                 start += ics->swb_sizes[g];
@@ -573,13 +576,13 @@ static int aac_encode_frame(AVCodecContext *avctx,
         memset(chan_el_counter, 0, sizeof(chan_el_counter));
         for (i = 0; i < s->chan_map[0]; i++) {
             FFPsyWindowInfo* wi = windows + start_ch;
-            const float *coeffs[2];
+            const float *coeffs[4];
             tag      = s->chan_map[i+1];
             chans    = tag == TYPE_CPE ? 2 : 1;
             cpe      = &s->cpe[i];
             put_bits(&s->pb, 3, tag);
             put_bits(&s->pb, 4, chan_el_counter[tag]++);
-            for (ch = 0; ch < chans; ch++)
+            for (ch = 0; ch < chans * chans; ch++)
                 coeffs[ch] = cpe->ch[ch].coeffs;
             s->psy.model->analyze(&s->psy, start_ch, coeffs, wi);
             cpe->common_window = 0;
@@ -626,8 +629,9 @@ static int aac_encode_frame(AVCodecContext *avctx,
         }
 
         frame_bits = put_bits_count(&s->pb);
+        av_log(avctx, AV_LOG_INFO, "bits = %d\n", frame_bits);
         if (frame_bits <= 6144 * avctx->channels - 3) {
-            s->psy.bitres.bits = frame_bits / avctx->channels;
+            s->psy.bitres.bits = frame_bits;
             break;
         }
 
