@@ -624,6 +624,7 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
         }
     }
 
+#if 0
     /* Don't worry about window shape or grouping here, just make sure types match.
      * NOTE: From here on, we assume if we enable mid/side the coder will enable
      *       it as well.
@@ -655,6 +656,7 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
             }
         }
     }
+#endif
 
     //modify thresholds and energies - spread, threshold in quiet, pre-echo control
     for (ch = 0; ch < group->num_ch; ch++) {
@@ -818,6 +820,7 @@ av_log(NULL, AV_LOG_INFO, "5.6.1.3.5: pe = %f, desired = %f\n", pe, desired_pe);
                 }
             }
 av_log(NULL, AV_LOG_INFO, "5.6.1.3.7a: pe = %f, desired = %f\n", pe, desired_pe);
+#if 0
             if (pe > desired_pe) {
                 float border, min_energy = FLT_MAX, avg_energy = 0.0f;
                 int bands = 0;
@@ -895,6 +898,7 @@ av_log(NULL, AV_LOG_INFO, "5.6.1.3.7c: pe = %f, desired = %f, border = %f\n",
        pe, desired_pe, border);
                 }
             }
+#endif
         }
     }
 
