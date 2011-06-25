@@ -564,7 +564,7 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
 {
     AacPsyContext *pctx = (AacPsyContext*) ctx->model_priv_data;
     FFPsyChannelGroup *group = ff_psy_find_group(ctx, channel);
-    int start = 0, short_window = 0, max_bands = 0;
+    int short_window = 0, max_bands = 0;
     int ch, w, g, i;
     int num_bands[2];
     float desired_bits, desired_pe, delta_pe, spread_en[2][128] = {{0}};
@@ -575,6 +575,7 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
         AacPsyChannel *pch  = &pctx->ch[channel + ch];
         const uint8_t *band_sizes = ctx->bands[wi[ch].num_windows == 8];
         AacPsyCoeffs  *psy_coeffs = pctx->psy_coef[wi[ch].num_windows == 8];
+        int start = 0;
 
         num_bands[ch] = ctx->num_bands[wi[ch].num_windows == 8];
         max_bands = FFMAX(max_bands, num_bands[ch]);

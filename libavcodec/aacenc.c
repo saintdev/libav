@@ -556,10 +556,10 @@ static int aac_encode_frame(AVCodecContext *avctx,
                 for (g = 0; g < ics->num_swb; g++) {
                     for (j = 0; j < ics->swb_sizes[g]; j++) {
                         /* Channels 2 and 3 are the virtual mid and side channels. */
-                        float M = (cpe->ch[0].coeffs[start+i] + cpe->ch[1].coeffs[start+i]) / 2.0f;
-                        float S = (cpe->ch[0].coeffs[start+i] - cpe->ch[1].coeffs[start+i]) / 2.0f;
+                        float M = (cpe->ch[0].coeffs[start+j] + cpe->ch[1].coeffs[start+j]) / 2.0f;
+                        float S = (cpe->ch[0].coeffs[start+j] - cpe->ch[1].coeffs[start+j]) / 2.0f;
                         cpe->ch[2].coeffs[start+j] = M;
-                        cpe->ch[3].coeffs[start+i] = S;
+                        cpe->ch[3].coeffs[start+j] = S;
                     }
                 }
                 start += ics->swb_sizes[g];
