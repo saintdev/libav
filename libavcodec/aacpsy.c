@@ -571,6 +571,7 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
     float a = 0.0f, active_lines = 0.0f, norm_fac = 0.0f, reduction = 0.0f, ms_thr = 1.0f;
     float pe = pctx->chan_bitrate > 32000 ? 0.0f : FFMAX(50.0f, 100.0f - pctx->chan_bitrate * 100.0f / 32000.0f);
 
+    memset(group->coupling, 0, sizeof(group->coupling));
     for (ch = 0; ch < group->num_ch; ch++) {
         AacPsyChannel *pch  = &pctx->ch[channel + ch];
         const uint8_t *band_sizes = ctx->bands[wi[ch].num_windows == 8];
@@ -625,7 +626,6 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
         }
     }
 
-#if 0
     /* Don't worry about window shape or grouping here, just make sure types match.
      * NOTE: From here on, we assume if we enable mid/side the coder will enable
      *       it as well.
@@ -633,6 +633,7 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
     if (group->num_ch == 2 &&
         wi[0].window_type[0] == wi[1].window_type[0]) {
         const uint8_t *band_sizes = ctx->bands[wi[0].num_windows == 8];
+        int start = 0;
 
         for (w = 0; w < wi[0].num_windows*16; w += 16) {
             for (g = 0; g < num_bands[0]; g++) {
@@ -645,7 +646,6 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
                     energyM += coeffs[2][start+i] * coeffs[2][start+i];
                     energyS += coeffs[3][start+i] * coeffs[3][start+i];
                 }
-// av_log(NULL, AV_LOG_INFO, "sfb = %d, coupling = %d\n", g, group->coupling[w+g]);
                 if ((thr * thr) / (energyM * energyS) >= ms_thr) {
                     group->coupling[w+g] = 1;
                     band0->thr = band1->thr = thr;
@@ -657,7 +657,6 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
             }
         }
     }
-#endif
 
     //modify thresholds and energies - spread, threshold in quiet, pre-echo control
     for (ch = 0; ch < group->num_ch; ch++) {
