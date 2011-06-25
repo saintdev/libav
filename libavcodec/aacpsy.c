@@ -820,7 +820,6 @@ av_log(NULL, AV_LOG_INFO, "5.6.1.3.5: pe = %f, desired = %f\n", pe, desired_pe);
                 }
             }
 av_log(NULL, AV_LOG_INFO, "5.6.1.3.7a: pe = %f, desired = %f\n", pe, desired_pe);
-#if 0
             if (pe > desired_pe) {
                 float border, min_energy = FLT_MAX, avg_energy = 0.0f;
                 int bands = 0;
@@ -898,7 +897,6 @@ av_log(NULL, AV_LOG_INFO, "5.6.1.3.7c: pe = %f, desired = %f, border = %f\n",
        pe, desired_pe, border);
                 }
             }
-#endif
         }
     }
 
