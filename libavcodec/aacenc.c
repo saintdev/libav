@@ -546,24 +546,41 @@ static int aac_encode_frame(AVCodecContext *avctx,
 
             apply_window_and_mdct(avctx, s, &cpe->ch[ch], samples2);
         }
+        cpe->common_window = 0;
         if (tag == TYPE_CPE
             && wi[0].window_type[0] == wi[1].window_type[0]
             && wi[0].window_shape   == wi[1].window_shape) {
+
+            cpe->common_window = 1;
+            for (w = 0; w < wi[0].num_windows; w++) {
+                if (wi[0].grouping[w] != wi[1].grouping[w]) {
+                    cpe->common_window = 0;
+                    break;
+                }
+            }
+        }
+        if (cpe->common_window) {
             /* Go ahead and calculate mid/side coefficients now, we have to calculate them at least once anyway */
             IndividualChannelStream *ics = &cpe->ch[0].ics;
+
             start = 0;
             for (w = 0; w < ics->num_windows*16; w += 16) {
                 for (g = 0; g < ics->num_swb; g++) {
                     for (j = 0; j < ics->swb_sizes[g]; j++) {
                         /* Channels 2 and 3 are the virtual mid and side channels. */
-                        float M = (cpe->ch[0].coeffs[start+j] + cpe->ch[1].coeffs[start+j]) / 2.0f;
-                        float S = (cpe->ch[0].coeffs[start+j] - cpe->ch[1].coeffs[start+j]) / 2.0f;
+                        const float R = cpe->ch[0].coeffs[start+j];
+                        const float L = cpe->ch[1].coeffs[start+j];
+                        const float M = (R + L) / 2.0f;
+                        const float S = (R - L) / 2.0f;
                         cpe->ch[2].coeffs[start+j] = M;
                         cpe->ch[3].coeffs[start+j] = S;
                     }
+                    start += ics->swb_sizes[g];
                 }
-                start += ics->swb_sizes[g];
             }
+        } else {
+            for (ch = 2; ch < 4; ch++)
+                memset(cpe->ch[ch].coeffs, 0, sizeof(cpe->ch[ch].coeffs));
         }
         start_ch += chans;
     }
@@ -584,20 +601,9 @@ static int aac_encode_frame(AVCodecContext *avctx,
             put_bits(&s->pb, 4, chan_el_counter[tag]++);
             for (ch = 0; ch < chans * chans; ch++)
                 coeffs[ch] = cpe->ch[ch].coeffs;
-            s->psy.model->analyze(&s->psy, start_ch, coeffs, wi);
-            cpe->common_window = 0;
-            if (chans > 1
-                && wi[0].window_type[0] == wi[1].window_type[0]
-                && wi[0].window_shape   == wi[1].window_shape) {
 
-                cpe->common_window = 1;
-                for (w = 0; w < wi[0].num_windows; w++) {
-                    if (wi[0].grouping[w] != wi[1].grouping[w]) {
-                        cpe->common_window = 0;
-                        break;
-                    }
-                }
-            }
+            s->psy.model->analyze(&s->psy, start_ch, coeffs, wi);
+
             s->cur_channel = start_ch * 2;
             if (s->options.stereo_mode && cpe->common_window) {
                 if (s->options.stereo_mode > 0) {

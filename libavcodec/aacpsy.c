@@ -568,10 +568,9 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
     int ch, w, g, i;
     int num_bands[2];
     float desired_bits, desired_pe, delta_pe, spread_en[2][128] = {{0}};
-    float a = 0.0f, active_lines = 0.0f, norm_fac = 0.0f, reduction = 0.0f, ms_thr = 1.0f;
+    float a = 0.0f, active_lines = 0.0f, norm_fac = 0.0f, reduction = 0.0f;
     float pe = pctx->chan_bitrate > 32000 ? 0.0f : FFMAX(50.0f, 100.0f - pctx->chan_bitrate * 100.0f / 32000.0f);
 
-    memset(group->coupling, 0, sizeof(group->coupling));
     for (ch = 0; ch < group->num_ch; ch++) {
         AacPsyChannel *pch  = &pctx->ch[channel + ch];
         const uint8_t *band_sizes = ctx->bands[wi[ch].num_windows == 8];
@@ -621,7 +620,6 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
                 if (!(wi[ch].window_type[0] == LONG_STOP_SEQUENCE || (wi[ch].window_type[1] == LONG_START_SEQUENCE && !w)))
                     band->thr = FFMAX(PSY_3GPP_RPEMIN*band->thr, FFMIN(band->thr,
                                       PSY_3GPP_RPELEV*pch->prev_band[w+g].thr_quiet));
-                ms_thr *= (band->thr / band->energy);
             }
         }
     }
@@ -639,6 +637,7 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
             for (g = 0; g < num_bands[0]; g++) {
                 AacPsyBand *band0 = &pctx->ch[channel+0].band[w+g];
                 AacPsyBand *band1 = &pctx->ch[channel+1].band[w+g];
+                const float ms_thr = (band0->thr * band1->thr) / (band0->energy * band1->energy);
                 const float thr = FFMIN(band0->thr, band1->thr);
                 float energyM = 0, energyS = 0;
 
@@ -646,8 +645,9 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
                     energyM += coeffs[2][start+i] * coeffs[2][start+i];
                     energyS += coeffs[3][start+i] * coeffs[3][start+i];
                 }
-                if ((thr * thr) / (energyM * energyS) >= ms_thr) {
-                    group->coupling[w+g] = 1;
+                group->coupling[w+g]  = energyM && energyS;
+                group->coupling[w+g] &= (thr * thr) / (energyM * energyS) >= ms_thr;
+                if (group->coupling[w+g]) {
                     band0->thr = band1->thr = thr;
                     spread_en[0][w+g] = spread_en[1][w+g] =
                         FFMIN(spread_en[0][w+g], spread_en[1][w+g]);
