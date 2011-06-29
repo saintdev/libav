@@ -1053,28 +1053,22 @@ static void search_for_quantizers_fast(AVCodecContext *avctx, AACEncContext *s,
 static void search_for_ms(AACEncContext *s, ChannelElement *cpe,
                           const float lambda)
 {
-    int start = 0, i, w, w2, g;
+    int w, w2, g;
     IndividualChannelStream *ics = &cpe->ch[0].ics;
-    SingleChannelElement *sceR = &cpe->ch[0];
-    SingleChannelElement *sceL = &cpe->ch[1];
-    SingleChannelElement *sceM = &cpe->ch[2];
-    SingleChannelElement *sceS = &cpe->ch[3];
     FFPsyChannelGroup *group = ff_psy_find_group(&s->psy, s->cur_channel);
     if (!cpe->common_window)
         return;
     for (w = 0; w < ics->num_windows; w += ics->group_len[w]) {
         for (g = 0;  g < ics->num_swb; g++) {
-            if (cpe->ms_mask[w*16+g] = group->coupling[w*16+g]) {
-                for (w2 = 0; w2 < ics->group_len[w]; w2++) {
-                    for (i = 0; i < ics->swb_sizes[g]; i++) {
-                        sceR->coeffs[start+w2*128+i] = sceM->coeffs[start+w2*128+i];
-                        sceL->coeffs[start+w2*128+i] = sceS->coeffs[start+w2*128+i];
-                    }
+            cpe->ms_mask[w*16+g] = 1;
+            for (w2 = 0; w2 < ics->group_len[w]; w++) {
+                if (!group->coupling[(w+w2)*16+g]) {
+                    cpe->ms_mask[w*16+g] = 0;
+                    break;
                 }
             }
-            av_log(NULL, AV_LOG_INFO, "sfb = %d, m/s = %d, coupling = %d\n",
-                   g, cpe->ms_mask[w*16+g], group->coupling[w*16+g]);
-            start += ics->swb_sizes[g];
+            for (w2 = 0; w2 < ics->group_len[w]; w++)
+                cpe->ms_mask[(w+w2)*16+g] = cpe->ms_mask[w*16+g];
         }
     }
 }

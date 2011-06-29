@@ -300,10 +300,13 @@ static void encode_ms_info(PutBitContext *pb, ChannelElement *cpe)
     int i, w;
 
     put_bits(pb, 2, cpe->ms_mode);
+    av_log(NULL, AV_LOG_INFO, "ms_mode = %d\n", cpe->ms_mode);
     if (cpe->ms_mode == 1)
         for (w = 0; w < cpe->ch[0].ics.num_windows; w += cpe->ch[0].ics.group_len[w])
-            for (i = 0; i < cpe->ch[0].ics.max_sfb; i++)
+            for (i = 0; i < cpe->ch[0].ics.max_sfb; i++) {
                 put_bits(pb, 1, cpe->ms_mask[w*16 + i]);
+                av_log(NULL, AV_LOG_INFO, "sfb = %d, w = %d: m/s = %d\n", i, w, cpe->ms_mask[w*16 + i]);
+            }
 }
 
 /**
@@ -348,9 +351,12 @@ static void adjust_frame_information(AACEncContext *apc, ChannelElement *cpe, in
         ics0->max_sfb = FFMAX(ics0->max_sfb, ics1->max_sfb);
         ics1->max_sfb = ics0->max_sfb;
         for (w = 0; w < ics0->num_windows*16; w += 16)
-            for (i = 0; i < ics0->max_sfb; i++)
+            for (i = 0; i < ics0->max_sfb; i++) {
                 if (cpe->ms_mask[w+i])
                     msc++;
+                av_log(NULL, AV_LOG_INFO, "sfb = %02d, w = %d: m/s = %d\n",
+                       i, w/16, cpe->ms_mask[w+i]);
+            }
         if (msc == 0 || ics0->max_sfb == 0)
             cpe->ms_mode = 0;
         else
@@ -420,8 +426,8 @@ static void encode_spectral_coeffs(AACEncContext *s, SingleChannelElement *sce)
     for (w = 0; w < sce->ics.num_windows; w += sce->ics.group_len[w]) {
         start = 0;
         for (i = 0; i < sce->ics.max_sfb; i++) {
-            av_log(NULL, AV_LOG_INFO, "sfb = %d, zeroes = %d, sf = %d, cb = %d\n",
-                i, sce->zeroes[w*16+i], sce->sf_idx[w*16+i], sce->band_type[w*16+i]);
+//             av_log(NULL, AV_LOG_INFO, "sfb = %d, zeroes = %d, sf = %d, cb = %d\n",
+//                 i, sce->zeroes[w*16+i], sce->sf_idx[w*16+i], sce->band_type[w*16+i]);
             if (sce->zeroes[w*16 + i]) {
                 start += sce->ics.swb_sizes[i];
                 continue;
@@ -574,6 +580,8 @@ static int aac_encode_frame(AVCodecContext *avctx,
                         const float S = (R - L) / 2.0f;
                         cpe->ch[2].coeffs[start+j] = M;
                         cpe->ch[3].coeffs[start+j] = S;
+//                         av_log(NULL, AV_LOG_INFO, "%02d %03d %02d: %f, %f, %f, %f\n",
+//                             g, w, j, R, L, M, S);
                     }
                     start += ics->swb_sizes[g];
                 }
