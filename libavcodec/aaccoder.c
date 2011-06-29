@@ -1060,15 +1060,15 @@ static void search_for_ms(AACEncContext *s, ChannelElement *cpe,
         return;
     for (w = 0; w < ics->num_windows; w += ics->group_len[w]) {
         for (g = 0;  g < ics->num_swb; g++) {
-            cpe->ms_mask[w*16+g] = 1;
-            for (w2 = 0; w2 < ics->group_len[w]; w++) {
-                if (!group->coupling[(w+w2)*16+g]) {
-                    cpe->ms_mask[w*16+g] = 0;
-                    break;
-                }
+            int ms_flag = group->coupling[w*16+g];
+            for (w2 = 0; w2 < ics->group_len[w]; w2++) {
+                ms_flag &= group->coupling[(w+w2)*16+g];
+                av_log(NULL, AV_LOG_INFO, "sfb = %d, w = %d: coupling = %d\n", g, w+w2,
+                    ms_flag
+                );
             }
-            for (w2 = 0; w2 < ics->group_len[w]; w++)
-                cpe->ms_mask[(w+w2)*16+g] = cpe->ms_mask[w*16+g];
+            for (w2 = 0; w2 < ics->group_len[w]; w2++)
+                cpe->ms_mask[(w+w2)*16+g] = ms_flag;
         }
     }
 }
