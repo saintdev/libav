@@ -351,11 +351,17 @@ static void adjust_frame_information(AACEncContext *apc, ChannelElement *cpe, in
         ics0->max_sfb = FFMAX(ics0->max_sfb, ics1->max_sfb);
         ics1->max_sfb = ics0->max_sfb;
         for (w = 0; w < ics0->num_windows*16; w += 16)
-            for (i = 0; i < ics0->max_sfb; i++) {
-                if (cpe->ms_mask[w+i])
+            for (g = 0; g < ics0->max_sfb; g++) {
+                if (cpe->ms_mask[w+g]) {
+                    for (i = 0; i < ics0->swb_sizes[g]; i++) {
+                        cpe->ch[0].coeffs[start+i] = cpe->ch[2].coeffs[start+i];
+                        cpe->ch[1].coeffs[start+i] = cpe->ch[3].coeffs[start+i];
+                    }
                     msc++;
+                }
+                start += ics0->swb_sizes[g];
                 av_log(NULL, AV_LOG_INFO, "sfb = %02d, w = %d: m/s = %d\n",
-                       i, w/16, cpe->ms_mask[w+i]);
+                       g, w/16, cpe->ms_mask[w+g]);
             }
         if (msc == 0 || ics0->max_sfb == 0)
             cpe->ms_mode = 0;
