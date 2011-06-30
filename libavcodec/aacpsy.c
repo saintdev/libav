@@ -645,7 +645,11 @@ static void psy_3gpp_analyze(FFPsyContext *ctx, int channel, const float **coeff
                     energyM += coeffs[2][start+i] * coeffs[2][start+i];
                     energyS += coeffs[3][start+i] * coeffs[3][start+i];
                 }
+                /* FIXME: Safeguard to make sure we don't analyze mid/side when
+                 *        the coefficients are unavailable.
+                 */
                 group->coupling[w+g]  = energyM && energyS;
+
                 group->coupling[w+g] &= (thr * thr) / (energyM * energyS) >= ms_thr;
                 if (group->coupling[w+g]) {
                     band0->thr = band1->thr = thr;
