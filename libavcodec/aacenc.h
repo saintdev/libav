@@ -80,5 +80,6 @@ typedef struct AACEncContext {
 } AACEncContext;
 
 extern float ff_aac_pow34sf_tab[428];
+void ff_aac_sfb_encode_hcb(AACEncContext *s, const int *quants, int size, int cb);
 
 #endif /* AVCODEC_AACENC_H */

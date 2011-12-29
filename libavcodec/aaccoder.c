@@ -96,6 +96,75 @@ static void abs_pow34_v(float *out, const float *in, const int size)
 static const uint8_t aac_cb_range [12] = {0, 3, 3, 3, 3, 9, 9, 8, 8, 13, 13, 17};
 static const uint8_t aac_cb_maxval[12] = {0, 1, 1, 2, 2, 4, 4, 7, 7, 12, 12, 16};
 
+#define SFB_FUNC_TEMPLATE(type, cb, BT_UNSIGNED, BT_PAIR, BT_ESC) \
+static void sfb_ ##type ##_hcb_ ##cb(AACEncContext *s, const int *quants, int size) \
+{ \
+    const int dim = BT_PAIR ? 2 : 4; \
+    const int off = BT_UNSIGNED ? 0 : aac_cb_maxval[cb]; \
+\
+    if (!cb) \
+        return; \
+\
+    for (int i = 0; i < size; i += dim) { \
+        int curidx = 0; \
+\
+        for (int j = 0; j < dim; j++) { \
+            int t; \
+            if (BT_UNSIGNED) \
+                t = FFMIN(abs(quants[i + j]), aac_cb_maxval[cb]); \
+            else \
+                t = av_clip(quants[i + j], -aac_cb_maxval[cb], aac_cb_maxval[cb]); \
+            curidx *= aac_cb_range[cb]; \
+            curidx += t + off; \
+        } \
+        put_bits_template(s, ff_aac_spectral_bits[cb - 1][curidx], ff_aac_spectral_codes[cb - 1][curidx]); \
+        if (BT_UNSIGNED) \
+            for (int j = 0; j < dim; j++) \
+                if (ff_aac_codebook_vectors[cb - 1][curidx * dim + j] != 0.0f) \
+                    put_bits_template(s, 1, quants[i + j] < 0); \
+        if (BT_ESC) { \
+            for (int j = 0; j < 2; j++) { \
+                if (ff_aac_codebook_vectors[cb - 1][curidx * 2 + j] == 64.0f) { \
+                    int coef = abs(quants[i + j]); \
+                    int len = av_log2(coef); \
+\
+                    put_bits_template(s, len - 4 + 1, (1 << (len - 4 + 1)) - 2); \
+                    put_bits_template(s, len, coef & ((1 << len) - 1)); \
+                } \
+            } \
+        } \
+    } \
+}
+
+#define SFB_ENCODE_FUNC(cb, BT_UNSIGNED, BT_PAIR, BT_ESC) \
+    SFB_FUNC_TEMPLATE(encode, cb, BT_UNSIGNED, BT_PAIR, BT_ESC)
+
+#define put_bits_template(s, count, value) put_bits(&s->pb, count, value)
+SFB_ENCODE_FUNC( 0, 0, 0, 0 )
+SFB_ENCODE_FUNC( 1, 0, 0, 0 )
+SFB_ENCODE_FUNC( 2, 0, 0, 0 )
+SFB_ENCODE_FUNC( 3, 1, 0, 0 )
+SFB_ENCODE_FUNC( 4, 1, 0, 0 )
+SFB_ENCODE_FUNC( 5, 0, 1, 0 )
+SFB_ENCODE_FUNC( 6, 0, 1, 0 )
+SFB_ENCODE_FUNC( 7, 1, 1, 0 )
+SFB_ENCODE_FUNC( 8, 1, 1, 0 )
+SFB_ENCODE_FUNC( 9, 1, 1, 0 )
+SFB_ENCODE_FUNC(10, 1, 1, 0 )
+SFB_ENCODE_FUNC(11, 1, 1, 1 )
+#undef put_bits_template
+
+static void (*sfb_encode_hcb_arr[])(AACEncContext *s, const int *quants, int size) = {
+    sfb_encode_hcb_0, sfb_encode_hcb_1, sfb_encode_hcb_2,  sfb_encode_hcb_3,
+    sfb_encode_hcb_4, sfb_encode_hcb_5, sfb_encode_hcb_6,  sfb_encode_hcb_7,
+    sfb_encode_hcb_8, sfb_encode_hcb_9, sfb_encode_hcb_10, sfb_encode_hcb_11
+};
+
+void ff_aac_sfb_encode_hcb(AACEncContext *s, const int *quants, int size, int cb)
+{
+    sfb_encode_hcb_arr[cb](s, quants, size);
+}
+
 /**
  * Calculate rate distortion cost for quantizing with given codebook
  *
@@ -188,25 +257,10 @@ static av_always_inline float quantize_and_encode_band_cost_template(
         resbits += curbits;
         if (cost >= uplim)
             return uplim;
-        if (pb) {
-            put_bits(pb, ff_aac_spectral_bits[cb-1][curidx], ff_aac_spectral_codes[cb-1][curidx]);
-            if (BT_UNSIGNED)
-                for (j = 0; j < dim; j++)
-                    if (ff_aac_codebook_vectors[cb-1][curidx*dim+j] != 0.0f)
-                        put_bits(pb, 1, quants[j] < 0);
-            if (BT_ESC) {
-                for (j = 0; j < 2; j++) {
-                    if (ff_aac_codebook_vectors[cb-1][curidx*2+j] == 64.0f) {
-                        int coef = abs(quants[j]);
-                        int len = av_log2(coef);
-
-                        put_bits(pb, len - 4 + 1, (1 << (len - 4 + 1)) - 2);
-                        put_bits(pb, len, coef & ((1 << len) - 1));
-                    }
-                }
-            }
-        }
     }
+
+    if (pb)
+        sfb_encode_hcb_arr[cb](s, s->qcoefs, size);
 
     if (bits)
         *bits = resbits;
