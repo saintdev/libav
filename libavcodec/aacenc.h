@@ -41,8 +41,8 @@ typedef struct AACCoefficientsEncoder {
                                   SingleChannelElement *sce, const float lambda);
     void (*encode_window_bands_info)(struct AACEncContext *s, SingleChannelElement *sce,
                                      int win, int group_len, const float lambda);
-    void (*quantize_and_encode_band)(struct AACEncContext *s, PutBitContext *pb, const float *in, int size,
-                                     int scale_idx, int cb, const float lambda);
+    void (*quantize_and_encode_band)(struct AACEncContext *s, PutBitContext *pb, const float *in,
+                                     const float *scaled, int size, int scale_idx, int cb, const float lambda);
     void (*search_for_ms)(struct AACEncContext *s, ChannelElement *cpe, const float lambda);
 } AACCoefficientsEncoder;
 
@@ -72,7 +72,6 @@ typedef struct AACEncContext {
     int last_frame;
     float lambda;
     DECLARE_ALIGNED(16, int,   qcoefs)[96];      ///< quantized coefficients
-    DECLARE_ALIGNED(32, float, scoefs)[1024];    ///< scaled coefficients
 
     struct {
         float *samples;
@@ -80,6 +79,8 @@ typedef struct AACEncContext {
 } AACEncContext;
 
 extern float ff_aac_pow34sf_tab[428];
+
 void ff_aac_sfb_encode_hcb(AACEncContext *s, const int *quants, int size, int cb);
+void ff_abs_pow34_v(float *out, const float *in);
 
 #endif /* AVCODEC_AACENC_H */

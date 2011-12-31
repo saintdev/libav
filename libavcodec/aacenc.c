@@ -253,6 +253,7 @@ static void apply_window_and_mdct(AACEncContext *s, SingleChannelElement *sce,
     else
         for (i = 0; i < 1024; i += 128)
             s->mdct128.mdct_calc(&s->mdct128, sce->coeffs + i, output + i*2);
+    ff_abs_pow34_v(sce->scoeffs, sce->coeffs);
     memcpy(audio, audio + 1024, sizeof(audio[0]) * 1024);
 }
 
@@ -422,6 +423,7 @@ static void encode_spectral_coeffs(AACEncContext *s, SingleChannelElement *sce)
             }
             for (w2 = w; w2 < w + sce->ics.group_len[w]; w2++)
                 s->coder->quantize_and_encode_band(s, &s->pb, sce->coeffs + start + w2*128,
+                                                   sce->scoeffs + start + w2*128,
                                                    sce->ics.swb_sizes[i],
                                                    sce->sf_idx[w*16 + i],
                                                    sce->band_type[w*16 + i],
