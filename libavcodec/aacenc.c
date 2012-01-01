@@ -421,13 +421,11 @@ static void encode_spectral_coeffs(AACEncContext *s, SingleChannelElement *sce)
                 start += sce->ics.swb_sizes[i];
                 continue;
             }
-            for (w2 = w; w2 < w + sce->ics.group_len[w]; w2++)
-                s->coder->quantize_and_encode_band(s, &s->pb, sce->coeffs + start + w2*128,
-                                                   sce->scoeffs + start + w2*128,
-                                                   sce->ics.swb_sizes[i],
-                                                   sce->sf_idx[w*16 + i],
-                                                   sce->band_type[w*16 + i],
-                                                   s->lambda);
+            for (w2 = w; w2 < w + sce->ics.group_len[w]; w2++) {
+                ff_aac_quantize_band(s->qcoefs, sce->coeffs + start + w2*128, sce->scoeffs + start + w2*128,
+                                     sce->sf_idx[w*16 + i], sce->ics.swb_sizes[i]);
+                ff_aac_sfb_encode_hcb(s, s->qcoefs, sce->ics.swb_sizes[i], sce->band_type[w*16 + i]);
+            }
             start += sce->ics.swb_sizes[i];
         }
     }

@@ -82,6 +82,13 @@ static void quantize_bands(int *out, const float *in, const float *scaled,
     }
 }
 
+void ff_aac_quantize_band(int *out, const float *in, const float *scaled, int sf_idx, int size)
+{
+    const float Q34 = ff_aac_pow34sf_tab[POW_SF2_ZERO - sf_idx + SCALE_ONE_POS - SCALE_DIV_512];
+
+    quantize_bands(out, in, scaled, size, Q34);
+}
+
 static void abs_pow34_v(float *out, const float *in, const int size)
 {
 #ifndef USE_REALLY_FULL_SEARCH
@@ -176,8 +183,7 @@ void ff_aac_sfb_encode_hcb(AACEncContext *s, const int *quants, int size, int cb
  * @return quantization distortion
  */
 static av_always_inline float quantize_and_encode_band_cost_template(
-                                struct AACEncContext *s,
-                                PutBitContext *pb, const float *in,
+                                struct AACEncContext *s, const float *in,
                                 const float *scaled, int size, int scale_idx,
                                 int cb, const float lambda, const float uplim,
                                 int *bits, int BT_ZERO, int BT_UNSIGNED,
@@ -260,9 +266,6 @@ static av_always_inline float quantize_and_encode_band_cost_template(
             return uplim;
     }
 
-    if (pb)
-        sfb_encode_hcb_arr[cb](s, s->qcoefs, size);
-
     if (bits)
         *bits = resbits;
     return cost;
@@ -270,13 +273,12 @@ static av_always_inline float quantize_and_encode_band_cost_template(
 
 #define QUANTIZE_AND_ENCODE_BAND_COST_FUNC(NAME, BT_ZERO, BT_UNSIGNED, BT_PAIR, BT_ESC) \
 static float quantize_and_encode_band_cost_ ## NAME(                                        \
-                                struct AACEncContext *s,                                \
-                                PutBitContext *pb, const float *in,                     \
+                                struct AACEncContext *s, const float *in,               \
                                 const float *scaled, int size, int scale_idx,           \
                                 int cb, const float lambda, const float uplim,          \
                                 int *bits) {                                            \
     return quantize_and_encode_band_cost_template(                                      \
-                                s, pb, in, scaled, size, scale_idx,                     \
+                                s, in, scaled, size, scale_idx,                         \
                                 BT_ESC ? ESC_BT : cb, lambda, uplim, bits,              \
                                 BT_ZERO, BT_UNSIGNED, BT_PAIR, BT_ESC);                 \
 }
@@ -289,8 +291,7 @@ QUANTIZE_AND_ENCODE_BAND_COST_FUNC(UPAIR, 0, 1, 1, 0)
 QUANTIZE_AND_ENCODE_BAND_COST_FUNC(ESC,   0, 1, 1, 1)
 
 static float (*const quantize_and_encode_band_cost_arr[])(
-                                struct AACEncContext *s,
-                                PutBitContext *pb, const float *in,
+                                struct AACEncContext *s, const float *in,
                                 const float *scaled, int size, int scale_idx,
                                 int cb, const float lambda, const float uplim,
                                 int *bits) = {
@@ -308,28 +309,13 @@ static float (*const quantize_and_encode_band_cost_arr[])(
     quantize_and_encode_band_cost_ESC,
 };
 
-#define quantize_and_encode_band_cost(                                  \
-                                s, pb, in, scaled, size, scale_idx, cb, \
-                                lambda, uplim, bits)                    \
-    quantize_and_encode_band_cost_arr[cb](                              \
-                                s, pb, in, scaled, size, scale_idx, cb, \
-                                lambda, uplim, bits)
-
 static float quantize_band_cost(struct AACEncContext *s, const float *in,
                                 const float *scaled, int size, int scale_idx,
                                 int cb, const float lambda, const float uplim,
                                 int *bits)
 {
-    return quantize_and_encode_band_cost(s, NULL, in, scaled, size, scale_idx,
-                                         cb, lambda, uplim, bits);
-}
-
-static void quantize_and_encode_band(struct AACEncContext *s, PutBitContext *pb,
-                                     const float *in, const float *scaled, int size,
-                                     int scale_idx, int cb, const float lambda)
-{
-    quantize_and_encode_band_cost(s, pb, in, scaled, size, scale_idx, cb, lambda,
-                                  INFINITY, NULL);
+    return quantize_and_encode_band_cost_arr[cb](s, in, scaled, size, scale_idx,
+                                                 cb, lambda, uplim, bits);
 }
 
 static float find_max_val(int group_len, int swb_size, const float *scaled) {
@@ -1171,25 +1157,21 @@ AACCoefficientsEncoder ff_aac_coders[] = {
     {
         search_for_quantizers_faac,
         encode_window_bands_info,
-        quantize_and_encode_band,
         search_for_ms,
     },
     {
         search_for_quantizers_anmr,
         encode_window_bands_info,
-        quantize_and_encode_band,
         search_for_ms,
     },
     {
         search_for_quantizers_twoloop,
         codebook_trellis_rate,
-        quantize_and_encode_band,
         search_for_ms,
     },
     {
         search_for_quantizers_fast,
         encode_window_bands_info,
-        quantize_and_encode_band,
         search_for_ms,
     },
 };
