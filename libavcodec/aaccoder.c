@@ -70,16 +70,15 @@ static av_always_inline int quant(float coef, const float Q)
 }
 
 static void quantize_bands(int *out, const float *in, const float *scaled,
-                           int size, float Q34, int is_signed, int maxval)
+                           int size, float Q34, int maxval)
 {
     int i;
     double qc;
     for (i = 0; i < size; i++) {
         qc = scaled[i] * Q34;
         out[i] = (int)FFMIN(qc + 0.4054, (double)maxval);
-        if (is_signed && in[i] < 0.0f) {
+        if (in[i] < 0.0f)
             out[i] = -out[i];
-        }
     }
 }
 
@@ -134,7 +133,7 @@ static av_always_inline float quantize_and_encode_band_cost_template(
         abs_pow34_v(s->scoefs, in, size);
         scaled = s->scoefs;
     }
-    quantize_bands(s->qcoefs, in, scaled, size, Q34, !BT_UNSIGNED, maxval);
+    quantize_bands(s->qcoefs, in, scaled, size, Q34, maxval);
     if (BT_UNSIGNED) {
         off = 0;
     } else {
@@ -146,9 +145,17 @@ static av_always_inline float quantize_and_encode_band_cost_template(
         int curidx = 0;
         int curbits;
         float rd = 0.0f;
-        for (j = 0; j < dim; j++) {
-            curidx *= range;
-            curidx += quants[j] + off;
+        if (BT_UNSIGNED) {
+            for (j = 0; j < dim; j++) {
+                int t = abs(quants[j]);
+                curidx *= range;
+                curidx += t + off;
+            }
+        } else {
+            for (j = 0; j < dim; j++) {
+                curidx *= range;
+                curidx += quants[j] + off;
+            }
         }
         curbits =  ff_aac_spectral_bits[cb-1][curidx];
         vec     = &ff_aac_codebook_vectors[cb-1][curidx*dim];
@@ -187,7 +194,7 @@ static av_always_inline float quantize_and_encode_band_cost_template(
             if (BT_UNSIGNED)
                 for (j = 0; j < dim; j++)
                     if (ff_aac_codebook_vectors[cb-1][curidx*dim+j] != 0.0f)
-                        put_bits(pb, 1, in[i+j] < 0.0f);
+                        put_bits(pb, 1, quants[j] < 0);
             if (BT_ESC) {
                 for (j = 0; j < 2; j++) {
                     if (ff_aac_codebook_vectors[cb-1][curidx*2+j] == 64.0f) {
