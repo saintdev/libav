@@ -70,13 +70,13 @@ static av_always_inline int quant(float coef, const float Q)
 }
 
 static void quantize_bands(int *out, const float *in, const float *scaled,
-                           int size, float Q34, int maxval)
+                           int size, float Q34)
 {
     int i;
     double qc;
     for (i = 0; i < size; i++) {
         qc = scaled[i] * Q34;
-        out[i] = (int)FFMIN(qc + 0.4054, (double)maxval);
+        out[i] = (int)FFMIN(qc + 0.4054, 8191.0);
         if (in[i] < 0.0f)
             out[i] = -out[i];
     }
@@ -109,9 +109,7 @@ static av_always_inline float quantize_and_encode_band_cost_template(
                                 int *bits, int BT_ZERO, int BT_UNSIGNED,
                                 int BT_PAIR, int BT_ESC)
 {
-    const int q_idx = POW_SF2_ZERO - scale_idx + SCALE_ONE_POS - SCALE_DIV_512;
-    const float Q   = ff_aac_pow2sf_tab [q_idx];
-    const float Q34 = ff_aac_pow34sf_tab[q_idx];
+    const float Q34 = ff_aac_pow34sf_tab[POW_SF2_ZERO - scale_idx + SCALE_ONE_POS - SCALE_DIV_512];
     const float IQ  = ff_aac_pow2sf_tab [POW_SF2_ZERO + scale_idx - SCALE_ONE_POS + SCALE_DIV_512];
     const float CLIPPED_ESCAPE = 165140.0f*IQ;
     int i, j;
@@ -133,7 +131,7 @@ static av_always_inline float quantize_and_encode_band_cost_template(
         abs_pow34_v(s->scoefs, in, size);
         scaled = s->scoefs;
     }
-    quantize_bands(s->qcoefs, in, scaled, size, Q34, maxval);
+    quantize_bands(s->qcoefs, in, scaled, size, Q34);
     if (BT_UNSIGNED) {
         off = 0;
     } else {
@@ -147,14 +145,15 @@ static av_always_inline float quantize_and_encode_band_cost_template(
         float rd = 0.0f;
         if (BT_UNSIGNED) {
             for (j = 0; j < dim; j++) {
-                int t = abs(quants[j]);
+                int t = FFMIN(abs(quants[j]), maxval);
                 curidx *= range;
                 curidx += t + off;
             }
         } else {
             for (j = 0; j < dim; j++) {
+                int t = av_clip(quants[j], -maxval, maxval);
                 curidx *= range;
-                curidx += quants[j] + off;
+                curidx += t + off;
             }
         }
         curbits =  ff_aac_spectral_bits[cb-1][curidx];
@@ -168,7 +167,7 @@ static av_always_inline float quantize_and_encode_band_cost_template(
                         di = t - CLIPPED_ESCAPE;
                         curbits += 21;
                     } else {
-                        int c = av_clip(quant(t, Q), 0, 8191);
+                        int c = abs(quants[j]);
                         di = t - c*cbrtf(c)*IQ;
                         curbits += av_log2(c)*2 - 4 + 1;
                     }
@@ -198,7 +197,7 @@ static av_always_inline float quantize_and_encode_band_cost_template(
             if (BT_ESC) {
                 for (j = 0; j < 2; j++) {
                     if (ff_aac_codebook_vectors[cb-1][curidx*2+j] == 64.0f) {
-                        int coef = av_clip(quant(fabsf(in[i+j]), Q), 0, 8191);
+                        int coef = abs(quants[j]);
                         int len = av_log2(coef);
 
                         put_bits(pb, len - 4 + 1, (1 << (len - 4 + 1)) - 2);
