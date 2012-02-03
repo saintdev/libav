@@ -70,6 +70,7 @@ typedef struct AACEncContext {
     int last_frame;
     float lambda;
     DECLARE_ALIGNED(16, int,   qcoefs)[96];      ///< quantized coefficients
+    float iquants[96];
 
     struct {
         float *samples;

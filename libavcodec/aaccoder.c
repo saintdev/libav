@@ -82,6 +82,17 @@ static void quantize_bands(int *out, const float *in, const float *scaled,
     }
 }
 
+static void invquant_bands(float *out, const int *in, int size, float IQ)
+{
+    int i;
+
+    for (i = 0; i < size; i++) {
+        out[i] = (float)((double)in[i] * cbrt(in[i]) * (double)IQ);
+        if (in[i] < 0)
+            out[i] = -out[i];
+    }
+}
+
 void ff_aac_quantize_band(int *out, const float *in, const float *scaled, int sf_idx, int size)
 {
     const float Q34 = ff_aac_pow34sf_tab[POW_SF2_ZERO - sf_idx + SCALE_ONE_POS - SCALE_DIV_512];
@@ -177,6 +188,19 @@ void ff_aac_sfb_encode_hcb(AACEncContext *s, const int *quants, int size, int cb
     sfb_encode_hcb_arr[cb](s, quants, size);
 }
 
+static float band_ssd(const float *coeffs, const float *iquants, int size)
+{
+    int i;
+    float diff, ssd = 0.0f;
+
+    for (i = 0; i < size; i++) {
+        diff = coeffs[i] - iquants[i];
+        ssd += diff * diff;
+    }
+
+    return ssd;
+}
+
 /**
  * Calculate rate distortion cost for quantizing with given codebook
  *
@@ -185,9 +209,8 @@ void ff_aac_sfb_encode_hcb(AACEncContext *s, const int *quants, int size, int cb
 static av_always_inline float quantize_and_encode_band_cost_template(
                                 struct AACEncContext *s, const float *in,
                                 const float *scaled, int size, int scale_idx,
-                                int cb, const float lambda, const float uplim,
-                                int *bits, int BT_ZERO, int BT_UNSIGNED,
-                                int BT_PAIR, int BT_ESC)
+                                int cb, const float lambda, int *bits, int BT_ZERO,
+                                int BT_UNSIGNED, int BT_PAIR, int BT_ESC)
 {
     const float Q34 = ff_aac_pow34sf_tab[POW_SF2_ZERO - scale_idx + SCALE_ONE_POS - SCALE_DIV_512];
     const float IQ  = ff_aac_pow2sf_tab [POW_SF2_ZERO + scale_idx - SCALE_ONE_POS + SCALE_DIV_512];
@@ -199,6 +222,7 @@ static av_always_inline float quantize_and_encode_band_cost_template(
     const int range  = aac_cb_range[cb];
     const int maxval = aac_cb_maxval[cb];
     int off;
+    float ssd;
 
     if (BT_ZERO) {
         for (i = 0; i < size; i++)
@@ -208,6 +232,8 @@ static av_always_inline float quantize_and_encode_band_cost_template(
         return cost * lambda;
     }
     quantize_bands(s->qcoefs, in, scaled, size, Q34);
+    invquant_bands(s->iquants, s->qcoefs, size, IQ);
+    ssd = band_ssd(in, s->iquants, size);
     if (BT_UNSIGNED) {
         off = 0;
     } else {
@@ -218,7 +244,6 @@ static av_always_inline float quantize_and_encode_band_cost_template(
         int *quants = s->qcoefs + i;
         int curidx = 0;
         int curbits;
-        float rd = 0.0f;
         if (BT_UNSIGNED) {
             for (j = 0; j < dim; j++) {
                 int t = FFMIN(abs(quants[j]), maxval);
@@ -237,34 +262,22 @@ static av_always_inline float quantize_and_encode_band_cost_template(
         if (BT_UNSIGNED) {
             for (j = 0; j < dim; j++) {
                 float t = fabsf(in[i+j]);
-                float di;
                 if (BT_ESC && vec[j] == 64.0f) { //FIXME: slow
                     if (t >= CLIPPED_ESCAPE) {
-                        di = t - CLIPPED_ESCAPE;
                         curbits += 21;
                     } else {
                         int c = abs(quants[j]);
-                        di = t - c*cbrtf(c)*IQ;
                         curbits += av_log2(c)*2 - 4 + 1;
                     }
-                } else {
-                    di = t - vec[j]*IQ;
                 }
                 if (vec[j] != 0.0f)
                     curbits++;
-                rd += di*di;
-            }
-        } else {
-            for (j = 0; j < dim; j++) {
-                float di = in[i+j] - vec[j]*IQ;
-                rd += di*di;
             }
         }
-        cost    += rd * lambda + curbits;
         resbits += curbits;
-        if (cost >= uplim)
-            return uplim;
     }
+
+    cost = ssd * lambda + resbits;
 
     if (bits)
         *bits = resbits;
@@ -275,11 +288,10 @@ static av_always_inline float quantize_and_encode_band_cost_template(
 static float quantize_and_encode_band_cost_ ## NAME(                                        \
                                 struct AACEncContext *s, const float *in,               \
                                 const float *scaled, int size, int scale_idx,           \
-                                int cb, const float lambda, const float uplim,          \
-                                int *bits) {                                            \
+                                int cb, const float lambda, int *bits) {                \
     return quantize_and_encode_band_cost_template(                                      \
                                 s, in, scaled, size, scale_idx,                         \
-                                BT_ESC ? ESC_BT : cb, lambda, uplim, bits,              \
+                                BT_ESC ? ESC_BT : cb, lambda, bits,                     \
                                 BT_ZERO, BT_UNSIGNED, BT_PAIR, BT_ESC);                 \
 }
 
@@ -293,8 +305,7 @@ QUANTIZE_AND_ENCODE_BAND_COST_FUNC(ESC,   0, 1, 1, 1)
 static float (*const quantize_and_encode_band_cost_arr[])(
                                 struct AACEncContext *s, const float *in,
                                 const float *scaled, int size, int scale_idx,
-                                int cb, const float lambda, const float uplim,
-                                int *bits) = {
+                                int cb, const float lambda, int *bits) = {
     quantize_and_encode_band_cost_ZERO,
     quantize_and_encode_band_cost_SQUAD,
     quantize_and_encode_band_cost_SQUAD,
@@ -311,11 +322,10 @@ static float (*const quantize_and_encode_band_cost_arr[])(
 
 static float quantize_band_cost(struct AACEncContext *s, const float *in,
                                 const float *scaled, int size, int scale_idx,
-                                int cb, const float lambda, const float uplim,
-                                int *bits)
+                                int cb, const float lambda, int *bits)
 {
     return quantize_and_encode_band_cost_arr[cb](s, in, scaled, size, scale_idx,
-                                                 cb, lambda, uplim, bits);
+                                                 cb, lambda, bits);
 }
 
 static float find_max_val(int group_len, int swb_size, const float *scaled) {
@@ -397,7 +407,7 @@ static void encode_window_bands_info(AACEncContext *s, SingleChannelElement *sce
                     rd += quantize_band_cost(s, sce->coeffs + start + w*128,
                                              sce->scoeffs + start + w*128, size,
                                              sce->sf_idx[(win+w)*16+swb], cb,
-                                             lambda / band->threshold, INFINITY, NULL);
+                                             lambda / band->threshold, NULL);
                 }
                 cost_stay_here = path[swb][cb].cost + rd;
                 cost_get_here  = minrd              + rd + run_bits + 4;
@@ -518,7 +528,7 @@ static void codebook_trellis_rate(AACEncContext *s, SingleChannelElement *sce,
                     bits += quantize_band_cost(s, sce->coeffs + start + w*128,
                                                sce->scoeffs + start + w*128, size,
                                                sce->sf_idx[(win+w)*16+swb], cb,
-                                               0, INFINITY, NULL);
+                                               0, NULL);
                 }
                 cost_stay_here = path[swb][cb].cost + bits;
                 cost_get_here  = minbits            + bits + run_bits + 4;
@@ -702,7 +712,7 @@ static void search_for_quantizers_anmr(AVCodecContext *avctx, AACEncContext *s,
                     for (w2 = 0; w2 < sce->ics.group_len[w]; w2++) {
                         FFPsyBand *band = &s->psy.ch[s->cur_channel].psy_bands[(w+w2)*16+g];
                         dist += quantize_band_cost(s, coefs + w2*128, sce->scoeffs + start + w2*128, sce->ics.swb_sizes[g],
-                                                   q + q0, cb, lambda / band->threshold, INFINITY, NULL);
+                                                   q + q0, cb, lambda / band->threshold, NULL);
                     }
                     minrd = FFMIN(minrd, dist);
 
@@ -844,7 +854,6 @@ static void search_for_quantizers_twoloop(AVCodecContext *avctx,
                                                    sce->sf_idx[w*16+g],
                                                    cb,
                                                    1.0f,
-                                                   INFINITY,
                                                    &b);
                         bits += b;
                     }
@@ -1009,7 +1018,6 @@ static void search_for_quantizers_faac(AVCodecContext *avctx, AACEncContext *s,
                                                scf,
                                                ESC_BT,
                                                lambda,
-                                               INFINITY,
                                                &b);
                     dist -= b;
                 }
@@ -1126,25 +1134,25 @@ static void search_for_ms(AACEncContext *s, ChannelElement *cpe,
                                                 sce0->ics.swb_sizes[g],
                                                 sce0->sf_idx[(w+w2)*16+g],
                                                 sce0->band_type[(w+w2)*16+g],
-                                                lambda / band0->threshold, INFINITY, NULL);
+                                                lambda / band0->threshold, NULL);
                     dist1 += quantize_band_cost(s, sce1->coeffs + start + w2*128,
                                                 R34 + start + w2*128,
                                                 sce1->ics.swb_sizes[g],
                                                 sce1->sf_idx[(w+w2)*16+g],
                                                 sce1->band_type[(w+w2)*16+g],
-                                                lambda / band1->threshold, INFINITY, NULL);
+                                                lambda / band1->threshold, NULL);
                     dist2 += quantize_band_cost(s, M,
                                                 M34,
                                                 sce0->ics.swb_sizes[g],
                                                 sce0->sf_idx[(w+w2)*16+g],
                                                 sce0->band_type[(w+w2)*16+g],
-                                                lambda / maxthr, INFINITY, NULL);
+                                                lambda / maxthr, NULL);
                     dist2 += quantize_band_cost(s, S,
                                                 S34,
                                                 sce1->ics.swb_sizes[g],
                                                 sce1->sf_idx[(w+w2)*16+g],
                                                 sce1->band_type[(w+w2)*16+g],
-                                                lambda / minthr, INFINITY, NULL);
+                                                lambda / minthr, NULL);
                 }
                 cpe->ms_mask[w*16+g] = dist2 < dist1;
             }
