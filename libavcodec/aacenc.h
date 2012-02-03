@@ -71,6 +71,7 @@ typedef struct AACEncContext {
     float lambda;
     DECLARE_ALIGNED(16, int,   qcoefs)[96];      ///< quantized coefficients
     float iquants[96];
+    int bits_encoded;
 
     struct {
         float *samples;
