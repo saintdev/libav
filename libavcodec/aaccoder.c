@@ -496,6 +496,9 @@ static void codebook_trellis_rate(AACEncContext *s, SingleChannelElement *sce,
             int startcb = sce->band_type[win*16+swb];
             next_minbits = INFINITY;
             next_mincb = 0;
+            for(w = 0; w < group_len; w++)
+                ff_aac_quantize_band(s->qcoefs + w*36, sce->coeffs + start + w*128, sce->scoeffs + start + w*128,
+                                     sce->sf_idx[(win+w)*16+swb], size);
             for (cb = 0; cb < startcb; cb++) {
                 path[swb+1][cb].cost = 61450;
                 path[swb+1][cb].prev_idx = -1;
@@ -505,10 +508,7 @@ static void codebook_trellis_rate(AACEncContext *s, SingleChannelElement *sce,
                 float cost_stay_here, cost_get_here;
                 float bits = 0.0f;
                 for (w = 0; w < group_len; w++) {
-                    bits += quantize_band_cost(s, sce->coeffs + start + w*128,
-                                               sce->scoeffs + start + w*128, size,
-                                               sce->sf_idx[(win+w)*16+swb], cb,
-                                               0);
+                    bits += sfb_size_hcb(s, s->qcoefs + w*36, size, cb);
                 }
                 cost_stay_here = path[swb][cb].cost + bits;
                 cost_get_here  = minbits            + bits + run_bits + 4;
